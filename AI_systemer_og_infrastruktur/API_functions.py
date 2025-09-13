@@ -80,5 +80,3 @@ def chatbot(api, model="llama3"):
             print(f"Response tokens used: {data.get('eval_count')}")
         else:
             print(f"Error: {response.status_code}, {response.text}")
-
-

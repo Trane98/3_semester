@@ -1,10 +1,11 @@
 import requests
 import base64
+import os
 
 class APIChatGBT: 
     def __init__(self,
             url = "https://api.openai-proxy.org/v1/chat/completions",
-            api_key = "DIN_API_KEY_HER",
+            api_key = "sk-z3v9cFYsoEtYPSYX9QiExpv283o4QHqRnvy0eqqEcJOx8PK8@29301",
             content_type = "application/json",
             accept = "application/json",
             user_agent = "MyChatbot (Python 3.13; Windows 11; uni_env_3)"
@@ -41,7 +42,6 @@ class APIChatGBT:
             answer = result["choices"][0]["message"]["content"]
             print("Assistant:", answer)
 
-            # token-forbrug
             usage = result.get("usage", {})
             print(f"\nPrompt tokens: {usage.get('prompt_tokens')}")
             print(f"Completion tokens: {usage.get('completion_tokens')}")
@@ -53,32 +53,44 @@ class APIChatGBT:
 
 
 def main():
-    bot = APIChatGBT(api_key="DIN_API_KEY_HER")
+    bot = APIChatGBT(api_key = "sk-z3v9cFYsoEtYPSYX9QiExpv283o4QHqRnvy0eqqEcJOx8PK8@29301")
 
-    # Samtale starter laver strukturen til API'et
+    # Starter samtale
     conversation = [
         {"role": "system", "content": "You are a helpful assistant."}
     ]
 
-    # Først sender vi et billede med et spørgsmål
-    img_b64 = bot.encode_image("kat.png")
-    conversation.append({
-        "role": "user",
-        "content": [
-            {"type": "text", "text": "Kan du beskrive det her billede?"},
-            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}}
-        ]
-    })
+    print("Velkommen til ChatGBT med billedunderstøttelse!")
+    print("Skriv tekst som normalt, eller skriv 'image:<sti>' for at sende et billede.")
+    print("Skriv 'exit' for at afslutte.\n")
 
-    response = bot.send_message(conversation)
+    while True:
+        user_input = input("You: ")
+        if user_input.lower() in ["exit", "quit"]:
+            break
 
-    # Tilføj assistentens svar
-    conversation.append({"role": "assistant", "content": response})
+        # Bygger content dynamisk
+        content = []
+        if user_input.startswith("image:"):
+            # Brugeren har skrevet en sti til et billede
+            filepath = user_input.split("image:")[1].strip()
+            if os.path.exists(filepath):
+                img_b64 = bot.encode_image(filepath)
+                content.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}})
+            else:
+                print("Billedsti ikke fundet!")
+                continue
+        else:
+            # Almindelig tekst
+            content.append({"type": "text", "text": user_input})
 
-    # Så kan du fortsætte dialogen
-    conversation.append({"role": "user", "content": "Okay, hvilken race tror du katten er?"})
-    response = bot.send_message(conversation)
-    conversation.append({"role": "assistant", "content": response})
+        # Tilføj brugerens besked
+        conversation.append({"role": "user", "content": content})
+
+        # Send hele samtalen
+        response = bot.send_message(conversation)
+        if response:
+            conversation.append({"role": "assistant", "content": response})
 
 
 main()
