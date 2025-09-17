@@ -1,26 +1,25 @@
 import requests
 import base64
 import os
+import json
 
 class APIChatGBT: 
     def __init__(self,
             url = "https://api.openai-proxy.org/v1/chat/completions",
             api_key = "sk-z3v9cFYsoEtYPSYX9QiExpv283o4QHqRnvy0eqqEcJOx8PK8@29301",
             content_type = "application/json",
-            accept = "application/json",
             user_agent = "MyChatbot (Python 3.13; Windows 11; uni_env_3)"
     ):
         self.url = url
         self.api_key = api_key
         self.content_type = content_type
-        self.accept = accept
         self.user_agent = user_agent
 
     def get_headers(self):
         return {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": self.content_type,
-            "Accept": self.accept,
+            "Accept": "text/event-stream",  # vi streamer altid
             "User-Agent": self.user_agent,
         }
 
@@ -29,40 +28,48 @@ class APIChatGBT:
         with open(filepath, "rb") as f:
             return base64.b64encode(f.read()).decode("utf-8")
 
-    def send_message(self, conversation, model="gpt-4o-mini"):
-        data = {
-            "model": model,
-            "messages": conversation
-        }
+    def send_message_streaming(self, conversation, model="gpt-4o-mini"):
+        """Sender besked og streamer svaret"""
+        data = {"model": model, "messages": conversation, "stream": True}
 
-        response = requests.post(url=self.url, headers=self.get_headers(), json=data)
+        try:
+            with requests.post(
+                self.url,
+                headers=self.get_headers(),
+                json=data,
+                stream=True,
+                timeout=30
+            ) as response:
+                response.raise_for_status()
+                print("Assistant: ", end="", flush=True)
+                full_answer = ""
 
-        if response.status_code == 200:
-            result = response.json()
-            message = result["choices"][0]["message"]
+                for line in response.iter_lines():
+                    if line:
+                        line = line.decode("utf-8")
+                        if line.startswith("data: "):
+                            data = line[6:]
+                            if data == "[DONE]":
+                                break
+                            try:
+                                event_data = json.loads(data)
 
-            # Håndterer svar (tekst eller liste)
-            answer = ""
-            if isinstance(message["content"], str):
-                answer = message["content"]
-            elif isinstance(message["content"], list):
-                parts = []
-                for item in message["content"]:
-                    if item["type"] == "text":
-                        parts.append(item["text"])
-                    elif item["type"] == "image_url":
-                        parts.append(f"[Billede: {item['image_url']['url']}]")
-                answer = "\n".join(parts)
+                                # Tjek at der faktisk er noget i choices
+                                if "choices" in event_data and len(event_data["choices"]) > 0:
+                                    delta = event_data["choices"][0].get("delta", {})
+                                    if "content" in delta:
+                                        text = delta["content"]
+                                        print(text, end="", flush=True)
+                                        full_answer += text
+                                # ellers ignorerer vi eventet
+                            except json.JSONDecodeError:
+                                continue
 
-            print("Assistant:", answer)
+                print("\n")  # ny linje når streaming er færdig
+                return full_answer
 
-            usage = result.get("usage", {})
-            print(f"\nPrompt tokens: {usage.get('prompt_tokens')}")
-            print(f"Completion tokens: {usage.get('completion_tokens')}")
-            print(f"Total tokens: {usage.get('total_tokens')}")
-            return answer
-        else:
-            print("Fejl:", response.status_code, response.text)
+        except requests.exceptions.RequestException as e:
+            print(f"Streaming request failed: {e}")
             return None
 
 
@@ -70,13 +77,11 @@ def main():
     bot = APIChatGBT(api_key="sk-z3v9cFYsoEtYPSYX9QiExpv283o4QHqRnvy0eqqEcJOx8PK8@29301")
 
     # Starter samtale
-    conversation = [
-        {"role": "system", "content": "You are a helpful assistant."}
-    ]
+    conversation = [{"role": "system", "content": "You are a helpful assistant."}]
 
-    print("Velkommen til ChatGBT med billedunderstøttelse!")
+    print("Velkommen til ChatGBT med billedunderstøttelse og streaming!")
     print("Skriv tekst som normalt, eller tilføj 'image:<sti>' for at sende tekst + billede i samme besked.")
-    print("Eksempel: Se det her image:C:/Users/alex/Desktop/test.png")
+    print("Eksempel: Tjek det her image:C:/Users/alex/Desktop/test.png")
     print("Skriv 'exit' for at afslutte.\n")
 
     while True:
@@ -84,10 +89,9 @@ def main():
         if user_input.lower() in ["exit", "quit"]:
             break
 
-        # Bygger content dynamisk (kan indeholde tekst + billede i samme besked)
+        # Bygger content dynamisk (kan indeholde tekst + billede)
         content = []
         if "image:" in user_input:
-            # Split input i tekst og billedsti
             parts = user_input.split("image:")
             text_part = parts[0].strip()
             img_path = parts[1].strip()
@@ -105,17 +109,19 @@ def main():
                 print("Billedsti ikke fundet!")
                 continue
         else:
-            # Kun tekst
             content.append({"type": "text", "text": user_input})
 
-        # Tilføj brugerens besked til conversation
+        # Tilføj brugerens besked til samtalen
         conversation.append({"role": "user", "content": content})
 
-        # Send samtalen
-        response = bot.send_message(conversation)
+        # Send samtalen med streaming
+        response = bot.send_message_streaming(conversation)
+
         if response:
+            # Gem assistentens fulde svar i conversation
             conversation.append({"role": "assistant", "content": response})
 
 
 if __name__ == "__main__":
     main()
+
