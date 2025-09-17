@@ -39,7 +39,21 @@ class APIChatGBT:
 
         if response.status_code == 200:
             result = response.json()
-            answer = result["choices"][0]["message"]["content"]
+            message = result["choices"][0]["message"]
+
+            # Håndterer svar (tekst eller liste)
+            answer = ""
+            if isinstance(message["content"], str):
+                answer = message["content"]
+            elif isinstance(message["content"], list):
+                parts = []
+                for item in message["content"]:
+                    if item["type"] == "text":
+                        parts.append(item["text"])
+                    elif item["type"] == "image_url":
+                        parts.append(f"[Billede: {item['image_url']['url']}]")
+                answer = "\n".join(parts)
+
             print("Assistant:", answer)
 
             usage = result.get("usage", {})
@@ -53,7 +67,7 @@ class APIChatGBT:
 
 
 def main():
-    bot = APIChatGBT(api_key = "sk-z3v9cFYsoEtYPSYX9QiExpv283o4QHqRnvy0eqqEcJOx8PK8@29301")
+    bot = APIChatGBT(api_key="sk-z3v9cFYsoEtYPSYX9QiExpv283o4QHqRnvy0eqqEcJOx8PK8@29301")
 
     # Starter samtale
     conversation = [
@@ -61,7 +75,8 @@ def main():
     ]
 
     print("Velkommen til ChatGBT med billedunderstøttelse!")
-    print("Skriv tekst som normalt, eller skriv 'image:<sti>' for at sende et billede.")
+    print("Skriv tekst som normalt, eller tilføj 'image:<sti>' for at sende tekst + billede i samme besked.")
+    print("Eksempel: Se det her image:C:/Users/alex/Desktop/test.png")
     print("Skriv 'exit' for at afslutte.\n")
 
     while True:
@@ -69,28 +84,38 @@ def main():
         if user_input.lower() in ["exit", "quit"]:
             break
 
-        # Bygger content dynamisk
+        # Bygger content dynamisk (kan indeholde tekst + billede i samme besked)
         content = []
-        if user_input.startswith("image:"):
-            # Brugeren har skrevet en sti til et billede
-            filepath = user_input.split("image:")[1].strip()
-            if os.path.exists(filepath):
-                img_b64 = bot.encode_image(filepath)
-                content.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}})
+        if "image:" in user_input:
+            # Split input i tekst og billedsti
+            parts = user_input.split("image:")
+            text_part = parts[0].strip()
+            img_path = parts[1].strip()
+
+            if text_part:
+                content.append({"type": "text", "text": text_part})
+
+            if os.path.exists(img_path):
+                img_b64 = bot.encode_image(img_path)
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{img_b64}"}
+                })
             else:
                 print("Billedsti ikke fundet!")
                 continue
         else:
-            # Almindelig tekst
+            # Kun tekst
             content.append({"type": "text", "text": user_input})
 
-        # Tilføj brugerens besked
+        # Tilføj brugerens besked til conversation
         conversation.append({"role": "user", "content": content})
 
-        # Send hele samtalen
+        # Send samtalen
         response = bot.send_message(conversation)
         if response:
             conversation.append({"role": "assistant", "content": response})
 
 
-main()
+if __name__ == "__main__":
+    main()
